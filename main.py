@@ -13,42 +13,46 @@ mix = 1
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
-
-data: DataFrame = stock_price_download(ticker, start_date, end_date)
 stock_data = None
 
-for label, content in data.items():
-    if label == "Open":
-        stock_data = content
+def math():
+    global stock_data
+    data: DataFrame = stock_price_download(ticker, start_date, end_date)
+    stock_data = None
 
-num_entries: int = len(stock_data)
-step_factor: int = floor(num_entries / steps)
-port_out = None
-port_in = None
+    for label, content in data.items():
+        if label == "Open":
+            stock_data = content
 
-step_values: List[float] = [
-    stock_data[index] for index in range(0, num_entries, step_factor)
-]
-sorted_values: List[float] = [
-    stock_data[index] for index in range(0, num_entries, step_factor)
-]
-sorted_values.sort()
+    num_entries: int = len(stock_data)
+    step_factor: int = floor(num_entries / steps)
+    port_out = None
+    port_in = None
 
-min_value: float = sorted_values[0]
-max_value: float = sorted_values[-1]
-min_max_gap: float = max_value - min_value
+    step_values: List[float] = [
+        stock_data[index] for index in range(0, num_entries, step_factor)
+    ]
+    sorted_values: List[float] = [
+        stock_data[index] for index in range(0, num_entries, step_factor)
+    ]
+    sorted_values.sort()
 
-normalized_data: List[float] = [
-    (step - min_value) / min_max_gap for step in step_values
-]
+    min_value: float = sorted_values[0]
+    max_value: float = sorted_values[-1]
+    min_max_gap: float = max_value - min_value
 
-print(step_values[0:10])
-print(normalized_data[0:10])
+    normalized_data: List[float] = [
+        (step - min_value) / min_max_gap for step in step_values
+    ]
 
-mixed_data: List[float] = [
-    ((normalized - raw) * mix) + raw
-    for raw, normalized in zip(step_values, normalized_data)
-]
+    print(step_values[0:10])
+    print(normalized_data[0:10])
+
+    mixed_data: List[float] = [
+        ((normalized - raw) * mix) + raw
+        for raw, normalized in zip(step_values, normalized_data)
+    ]
+    return normalized_data
 
 
 class Clock:
@@ -104,7 +108,7 @@ class CvSequence:
 
     def _step(self):
         # print("step")
-        normalized_value: int = floor(127 * normalized_data[self.step_index])
+        normalized_value: int = floor(127 * self.sequence[self.step_index])
         message = Message(
             type="control_change",
             channel=self.channel,
@@ -115,42 +119,48 @@ class CvSequence:
         print(message)
         self._increment_step_index()
 
-try:
-    port_out = open_output(output_port_name)
-except:
-    print(get_output_names())
-    raise
 
-sequence = CvSequence(port= port_out, sequence=normalized_data, tics_per_step = 4, channel = 2, cc = 22)
+def main():
+    try:
+        port_out = open_output(output_port_name)
+    except:
+        print(get_output_names())
+        raise
 
-def clock_tic_callback() -> None:
-    # print("clock tick callback")
-    sequence.tick()
+    normalized_sequence_data = math()
+    sequence = CvSequence(port= port_out, sequence=normalized_sequence_data, tics_per_step = 4, channel = 2, cc = 22)
+
+    def clock_tic_callback() -> None:
+        # print("clock tick callback")
+        sequence.tick()
 
 
-clock = Clock(clock_tic_callback)
-input_thread = Thread(target=input_loop, args=(input_port_name, clock))
-input_thread.start()
+    clock = Clock(clock_tic_callback)
+    input_thread = Thread(target=input_loop, args=(input_port_name, clock))
+    input_thread.start()
 
-from PyQt5 import QtWidgets
-from pyqtgraph import PlotWidget, plot
-import pyqtgraph as pg
-import sys  # We need sys so that we can pass argv to QApplication
-import os
+if __name__ == "__main__":
+    main()
 
-class MainWindow(QtWidgets.QMainWindow):
+    from PyQt5 import QtWidgets
+    from pyqtgraph import PlotWidget, plot
+    import pyqtgraph as pg
+    import sys  # We need sys so that we can pass argv to QApplication
+    import os
 
-    def __init__(self, *args, **kwargs):
-        super(MainWindow, self).__init__(*args, **kwargs)
+    class MainWindow(QtWidgets.QMainWindow):
 
-        self.graphWidget = pg.PlotWidget()
-        self.setCentralWidget(self.graphWidget)
-        x = [i for i in range(len(stock_data))]
-        y = stock_data
-        # plot data: x, y values
-        self.graphWidget.plot(x, y)
+        def __init__(self, *args, **kwargs):
+            super(MainWindow, self).__init__(*args, **kwargs)
 
-app = QtWidgets.QApplication(sys.argv)
-main = MainWindow()
-main.show()
-sys.exit(app.exec_())
+            self.graphWidget = pg.PlotWidget()
+            self.setCentralWidget(self.graphWidget)
+            x = [i for i in range(len(stock_data))]
+            y = stock_data
+            # plot data: x, y values
+            self.graphWidget.plot(x, y)
+
+    app = QtWidgets.QApplication(sys.argv)
+    mw = MainWindow()
+    mw.show()
+    sys.exit(app.exec_())
