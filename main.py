@@ -1,4 +1,4 @@
-from mido import Message, open_input, get_input_names, get_output_names
+from mido import Message, open_input, get_input_names, get_output_names, open_output
 from yfinance import download as stock_price_download
 from typing import List, Callable
 from pandas import DataFrame
@@ -8,10 +8,10 @@ from math import floor
 ticker: str = "AAPL"
 start_date: str = "2016-01-01"
 end_date: str = "2018-01-01"
-steps = 16
+steps = 128
 mix = 1
 
-output_port_name: str = "FH-2"
+output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
 
 data: DataFrame = stock_price_download(ticker, start_date, end_date)
@@ -34,13 +34,16 @@ sorted_values: List[float] = [
 ]
 sorted_values.sort()
 
-min_value: float = sorted_values[-1]
-max_value: float = sorted_values[0]
+min_value: float = sorted_values[0]
+max_value: float = sorted_values[-1]
 min_max_gap: float = max_value - min_value
 
 normalized_data: List[float] = [
-    ((step - min_value) / min_max_gap) for step in step_values
+    (step - min_value) / min_max_gap for step in step_values
 ]
+
+print(step_values[0:10])
+print(normalized_data[0:10])
 
 mixed_data: List[float] = [
     ((normalized - raw) * mix) + raw
@@ -89,6 +92,7 @@ class CvSequence:
         # print("next_step", self.step_index)
         self.step_index += 1
         if self.step_index >= self.sequence_length:
+            print("----LOOP-------")
             self.step_index = 0
     
     def tick(self):
@@ -107,12 +111,17 @@ class CvSequence:
             control=self.cc,
             value=normalized_value,
         )
-        # self.port.send(message)
+        self.port.send(message)
         print(message)
         self._increment_step_index()
 
+try:
+    port_out = open_output(output_port_name)
+except:
+    print(get_output_names())
+    raise
 
-sequence = CvSequence(port= None, sequence=normalized_data, tics_per_step = 16, channel = 0, cc = 20)
+sequence = CvSequence(port= port_out, sequence=normalized_data, tics_per_step = 4, channel = 2, cc = 22)
 
 def clock_tic_callback() -> None:
     # print("clock tick callback")
@@ -123,5 +132,25 @@ clock = Clock(clock_tic_callback)
 input_thread = Thread(target=input_loop, args=(input_port_name, clock))
 input_thread.start()
 
-while True:
-    pass
+from PyQt5 import QtWidgets
+from pyqtgraph import PlotWidget, plot
+import pyqtgraph as pg
+import sys  # We need sys so that we can pass argv to QApplication
+import os
+
+class MainWindow(QtWidgets.QMainWindow):
+
+    def __init__(self, *args, **kwargs):
+        super(MainWindow, self).__init__(*args, **kwargs)
+
+        self.graphWidget = pg.PlotWidget()
+        self.setCentralWidget(self.graphWidget)
+        x = [i for i in range(len(stock_data))]
+        y = stock_data
+        # plot data: x, y values
+        self.graphWidget.plot(x, y)
+
+app = QtWidgets.QApplication(sys.argv)
+main = MainWindow()
+main.show()
+sys.exit(app.exec_())
