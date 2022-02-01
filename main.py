@@ -1,15 +1,19 @@
 from mido import Message, open_input, get_input_names, get_output_names, open_output
 from yfinance import download as stock_price_download
-from typing import List, Callable
+from typing import List, Callable, Optional
 from pandas import DataFrame
 from threading import Thread, Lock
 from math import floor
 
-ticker: str = "AAPL"
-start_date: str = "2016-01-01"
-end_date: str = "2018-01-01"
-steps = 128
+ticker: str = "PTON"
+start_date: str = "2020-01-01"
+end_date: str = "2022-01-01"
+steps = 32
 mix = 1
+
+channel = 2
+cc = 22
+tics_per_step = 8
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
@@ -45,8 +49,8 @@ def math():
         (step - min_value) / min_max_gap for step in step_values
     ]
 
-    print(step_values[0:10])
-    print(normalized_data[0:10])
+    # print(step_values[0:10])
+    # print(normalized_data[0:10])
 
     mixed_data: List[float] = [
         ((normalized - raw) * mix) + raw
@@ -57,11 +61,14 @@ def math():
 
 class Clock:
     def __init__(self, callback_fn) -> None:
-        self.callback_fn: Callable[[], None] = callback_fn
+        self.callback_fn: Callable[[Optional[Message]], None] = callback_fn
         pass
 
-    def tic(self) -> None:
-        self.callback_fn()
+    def tic(self, message: Optional[Message] = None) -> None:
+        self.callback_fn(message)
+
+    def message(self, message: Message) -> None:
+        self.callback_fn(message)
 
 
 def input_loop(port_name: str, clock: Clock) -> None:
@@ -74,10 +81,12 @@ def input_loop(port_name: str, clock: Clock) -> None:
         raise
     print("up and running")
     for message in port:
-        if message.type != "clock":
-            # print(message.type, message)
-            continue
-        clock.tic()
+        if message.type == "clock":
+            clock.tic()
+        else:
+            # thru port hack
+            # print("input loop sending", message)
+            clock.tic(message)
 
 
 class CvSequence:
@@ -128,11 +137,14 @@ def main():
         raise
 
     normalized_sequence_data = math()
-    sequence = CvSequence(port= port_out, sequence=normalized_sequence_data, tics_per_step = 4, channel = 2, cc = 22)
+    sequence = CvSequence(port= port_out, sequence=normalized_sequence_data, tics_per_step = tics_per_step, channel = channel, cc = cc)
 
-    def clock_tic_callback() -> None:
-        # print("clock tick callback")
-        sequence.tick()
+    def clock_tic_callback(message: Optional[Message] = None) -> None:
+        if not message:
+            sequence.tick()
+        else:
+            # print("clock tick callback", message)
+            port_out.send(message)
 
 
     clock = Clock(clock_tic_callback)
