@@ -21,42 +21,28 @@ stock_data = None
 
 def math():
     global stock_data
-    data: DataFrame = stock_price_download(ticker, start_date, end_date)
-    stock_data = None
+    df: DataFrame = stock_price_download(ticker, start_date, end_date)
+    df = df['Open']
 
-    for label, content in data.items():
-        if label == "Open":
-            stock_data = content
+    num_entries: int = len(df)
+    step_factor: int = floor(num_entries / steps) 
+    # NOTE: if the goal is to get 32 final steps, the floor causes the actual number you get to be slightly higher (ex.: ~34)
 
-    num_entries: int = len(stock_data)
-    step_factor: int = floor(num_entries / steps)
-    port_out = None
-    port_in = None
+    filtered_df = df.iloc[::step_factor]
 
-    step_values: List[float] = [
-        stock_data[index] for index in range(0, num_entries, step_factor)
-    ]
-    sorted_values: List[float] = [
-        stock_data[index] for index in range(0, num_entries, step_factor)
-    ]
-    sorted_values.sort()
+    
+    min_value: float = df.min()
+    max_value: float = df.max()
+    value_range: float = max_value - min_value
 
-    min_value: float = sorted_values[0]
-    max_value: float = sorted_values[-1]
-    min_max_gap: float = max_value - min_value
+    normalized_df = (filtered_df - min_value) / value_range
 
-    normalized_data: List[float] = [
-        (step - min_value) / min_max_gap for step in step_values
-    ]
+    # mixed_data: List[float] = [
+    #     ((normalized - raw) * mix) + raw
+    #     for raw, normalized in zip(step_values, normalized_data)
+    # ]
 
-    # print(step_values[0:10])
-    # print(normalized_data[0:10])
-
-    mixed_data: List[float] = [
-        ((normalized - raw) * mix) + raw
-        for raw, normalized in zip(step_values, normalized_data)
-    ]
-    return normalized_data
+    return normalized_df.tolist()
 
 
 class Clock:
