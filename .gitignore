@@ -10,7 +10,7 @@ bin/
 # C extensions
 share/
 *.so
-
+static_web/
 # Distribution / packaging
 .Python
 build/

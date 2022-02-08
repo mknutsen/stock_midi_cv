@@ -5,6 +5,7 @@ from pandas import DataFrame
 from threading import Thread, Lock
 from math import floor
 
+from flask_entry import main as flask_entry_point
 ticker: str = "PTON"
 start_date: str = "2020-01-01"
 end_date: str = "2022-01-01"
@@ -14,6 +15,7 @@ mix = 1
 channel = 2
 cc = 22
 tics_per_step = 8
+sequence = None
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
@@ -86,6 +88,9 @@ class CvSequence:
 		self.channel = channel
 		self.cc = cc
 		self.tics_per_step = tics_per_step
+	
+	def alter(self, name, value):
+		pass
 
 	def _increment_step_index(self):
 		# print("next_step", self.step_index)
@@ -114,10 +119,14 @@ class CvSequence:
 		print(message)
 		self._increment_step_index()
 
+def data_callback(name, value):
+	global sequence
+	print(f"abc123 data callback {name} {value}")
+	sequence.alter(name, value)
 
 def main():
-	print("hi")
-	sys.exit()
+	global sequence
+	flask_entry_point(callback=data_callback)
 	try:
 		port_out = open_output(output_port_name)
 	except:
