@@ -1,29 +1,33 @@
+from re import M
 from mido import Message, open_input, get_input_names, get_output_names, open_output
 from yfinance import download as stock_price_download
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Dict
 from pandas import DataFrame
 from threading import Thread, Lock
 from math import floor
-
+from helpers import Clock, Value
+import logging
 from flask_entry import (
     main as flask_entry_point,
     _KEYWORD_LIST,
     _RANGE_KEYWORD,
     _LENGTH_KEYWORD,
     _BASE_KEYWORD,
+    _MAX_VALUE,
+    _SKEW_KEYWORD,
     _RATE_KEYWORD,
 )
 
+_DEBUG = True
 ticker: str = "PTON"
 start_date: str = "2020-01-01"
 end_date: str = "2022-01-01"
-steps = 32
-mix = 1
+steps = Value(max_value=1024, min_value=8, initialized_value=32)
 
 channel = 2
 cc = 22
-tics_per_step = 8
-sequence = None
+tics_per_step = Value(max_value=1024, min_value=1, initialized_value=8)
+SEQUENCE = None
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
@@ -36,7 +40,7 @@ def math():
     df = df["Open"]
 
     num_entries: int = len(df)
-    step_factor: int = floor(num_entries / steps)
+    step_factor: int = floor(num_entries / steps.value)
     # NOTE: if the goal is to get 32 final steps, the floor causes the actual number you get to be slightly higher (ex.: ~34)
 
     filtered_df = df.iloc[::step_factor]
@@ -53,18 +57,6 @@ def math():
     # ]
 
     return normalized_df.tolist()
-
-
-class Clock:
-    def __init__(self, callback_fn) -> None:
-        self.callback_fn: Callable[[Optional[Message]], None] = callback_fn
-        pass
-
-    def tic(self, message: Optional[Message] = None) -> None:
-        self.callback_fn(message)
-
-    def message(self, message: Message) -> None:
-        self.callback_fn(message)
 
 
 def input_loop(port_name: str, clock: Clock) -> None:
@@ -96,16 +88,13 @@ class CvSequence:
         self.channel = channel
         self.cc = cc
         self.tics_per_step = tics_per_step
+        self.alter_table: Dict[str, Value] = {
+            word: Value(initialized_value=0, max_value=_MAX_VALUE, min_value=0)
+            for word in _KEYWORD_LIST
+        }
 
     def alter(self, name, value):
-      if name == _RATE_KEYWORD:
-        pass
-      elif name == _LENGTH_KEYWORD:
-        pass
-      elif name == _RANGE_KEYWORD:
-        pass
-      elif name == _BASE_KEYWORD:
-        pass
+        self.alter_table[name].value = int(value)
 
     def _increment_step_index(self):
         # print("next_step", self.step_index)
@@ -123,35 +112,51 @@ class CvSequence:
 
     def _step(self):
         # print("step")
-        normalized_value: int = floor(127 * self.sequence[self.step_index])
+        raw_step_value = self.sequence[self.step_index]
+        rate_value = self.alter_table[_RATE_KEYWORD]
+        # length_value = self.alter_table[_LENGTH_KEYWORD]
+        # range_value = self.alter_table[_RANGE_KEYWORD]
+        base_value = self.alter_table[_BASE_KEYWORD]
+        skew_value = self.alter_table[_SKEW_KEYWORD]
+        skewed_skew_value = Value(
+            min_value=0.5, max_value=1.5, initialized_percent=skew_value.value_percent
+        )
+        computed_step = base_value.value_percent + raw_step_value * skewed_skew_value
+        normalized_value: Value = Value(
+            max_value=_MAX_VALUE, min_value=0, initialized_percent=computed_step
+        )
         message = Message(
             type="control_change",
             channel=self.channel,
             control=self.cc,
             value=normalized_value,
         )
-        self.port.send(message)
-        print(message)
+        self.tics_per_step = rate_value
+        if not _DEBUG:
+            self.port.send(message)
+        print(f"{'not sending' if _DEBUG else 'sending'}", message)
         self._increment_step_index()
 
 
 def data_callback(name, value):
-    global sequence
-    print(f"abc123 data callback {name} {value}")
-    sequence.alter(name, value)
+    global SEQUENCE
+    SEQUENCE.alter(name, value)
 
 
 def main():
-    global sequence
-    flask_entry_point(callback=data_callback)
-    try:
-        port_out = open_output(output_port_name)
-    except:
-        print(get_output_names())
-        raise
+    global SEQUENCE
+    logging.basicConfig(filename="example.log", encoding="utf-8", level=logging.DEBUG)
+    if not _DEBUG:
+        try:
+            port_out = open_output(output_port_name)
+        except:
+            print(get_output_names())
+            raise
+    else:
+        port_out = None
 
     normalized_sequence_data = math()
-    sequence = CvSequence(
+    SEQUENCE = CvSequence(
         port=port_out,
         sequence=normalized_sequence_data,
         tics_per_step=tics_per_step,
@@ -164,11 +169,13 @@ def main():
             sequence.tick()
         else:
             # print("clock tick callback", message)
-            port_out.send(message)
+            if not _DEBUG:
+                port_out.send(message)
 
-    clock = Clock(clock_tic_callback)
-    input_thread = Thread(target=input_loop, args=(input_port_name, clock))
-    input_thread.start()
+    flask_entry_point(callback=data_callback)
+    # clock = Clock(clock_tic_callback)
+    # input_thread = Thread(target=input_loop, args=(input_port_name, clock))
+    # input_thread.start()
 
 
 if __name__ == "__main__":

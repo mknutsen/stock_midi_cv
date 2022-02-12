@@ -18,12 +18,19 @@ static_web_folder_path_str = static_web_folder_path.resolve()
 dashboard_file_path = static_web_folder_path / (dashboard_file_name + ".html")
 dashboard_file_path_str = dashboard_file_path.resolve()
 
-
-_RATE_KEYWORD = "RATE"
+_MAX_VALUE = 100
+_RATE_KEYWORD = "rate"
 _LENGTH_KEYWORD = "length"
 _RANGE_KEYWORD = "range"
 _BASE_KEYWORD = "base"
-_KEYWORD_LIST = [_RATE_KEYWORD, _LENGTH_KEYWORD, _RANGE_KEYWORD, _BASE_KEYWORD]
+_SKEW_KEYWORD = "skew"
+_KEYWORD_LIST = [
+    _RATE_KEYWORD,
+    _LENGTH_KEYWORD,
+    _RANGE_KEYWORD,
+    _BASE_KEYWORD,
+    _SKEW_KEYWORD,
+]
 
 rmtree(static_web_folder_path_str)
 makedirs(static_web_folder_path_str)
@@ -34,7 +41,7 @@ Hello world dashboard
 
     {{#names}}
     {{name}}
-    <input type="range" name="{{name}}" min="0" max="100" value="50" class="slider" id="{{name}}">
+    <input type="range" name="{{name}}" min="0" max="{{max_value}}" value="50" class="slider" id="{{name}}">
     {{/names}}
   <INPUT type="submit" name="Send">
 </FORM>
@@ -59,6 +66,7 @@ Hello world dashboard
 """
 
 input_dict = {"names": [{"name": element} for element in _KEYWORD_LIST]}
+input_dict["max_value"] = _MAX_VALUE
 renderer = Renderer()
 
 with open(dashboard_file_path_str, "w") as file:
@@ -81,7 +89,7 @@ def parse_request():
     data = request.data  # data is empty
     data_source_name = request.form.get("name", "")
     data_value = request.form.get("value", "")
-    print("in here abc123", data, type(data), request.form)
+    # print("in here abc123", data, type(data), request.form)
     if GLOBAL_DATA_CALLBACK:
         if not (data_source_name and data_value):
             raise FlaskException()

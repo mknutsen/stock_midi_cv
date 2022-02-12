@@ -10,3 +10,5 @@ pyqtgraph==0.12.3
 python-rtmidi==1.4.9
 yfinance==0.1.70
 pystache==0.6.0
+notebook==6.4.8
+pytest==7.0.1
