@@ -40,6 +40,11 @@ class CvSequence:
         self.thread = Thread(target=self.time, args=())
         self.thread.start()
 
+    def set_sequence(self, seqeunce):
+        with self.lock:
+            self.sequence = seqeunce
+            self.sequence_length = len(seqeunce)
+
     @property
     def ms_per_tick(self):
         print("abc123 entering ms per tic")

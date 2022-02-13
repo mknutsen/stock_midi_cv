@@ -25,10 +25,10 @@ from flask_entry import (
 )
 from sequence import CvSequence
 
-ticker: str = "PTON"
-start_date: str = "2020-01-01"
-end_date: str = "2022-01-01"
-steps = Value(max_value=1024, min_value=8, initialized_value=32)
+GLOBAL_TICKER: str = "PTON"
+GLOBAL_START_DATE: str = "2020-01-01"
+GLOBAL_END_DATE: str = "2022-01-01"
+GLOBAL_NUM_STEPS = Value(max_value=1024, min_value=8, initialized_value=32)
 
 channel = 2
 cc = 22
@@ -41,12 +41,17 @@ GLOBAL_STOCK_DATA = None
 
 
 def math():
-    global GLOBAL_STOCK_DATA
-    df: DataFrame = stock_price_download(ticker, start_date, end_date)
+    global GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
+    df: DataFrame = stock_price_download(GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE)
     df = df["Open"]
     GLOBAL_STOCK_DATA = df
     num_entries: int = len(df)
-    step_factor: int = floor(num_entries / steps.value)
+
+    if not num_entries:
+        print("empty stock info")
+        return []
+
+    step_factor: int = floor(num_entries / GLOBAL_NUM_STEPS.value)
     # NOTE: if the goal is to get 32 final steps, the floor causes the actual number you get to be slightly higher (ex.: ~34)
 
     filtered_df = df.iloc[::step_factor]
@@ -87,8 +92,13 @@ def input_loop(port_name: str, clock: Clock) -> None:
 
 
 def data_callback(name, value):
-    global SEQUENCE
-    SEQUENCE.alter(name, value)
+    global SEQUENCE, GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
+    if name == "ticker":
+        print("ticker", name, value)
+        GLOBAL_TICKER = value
+        SEQUENCE.set_sequence(math())
+    else:
+        SEQUENCE.alter(name, value)
 
 
 def run_graph():

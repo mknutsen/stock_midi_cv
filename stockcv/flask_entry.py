@@ -54,8 +54,9 @@ Hello world dashboard
     var xhr = new XMLHttpRequest();
     document.getElementById("stock_button").addEventListener('click', () => {
       console.log("button pressed: " + document.getElementById("stock_box").value);
-      xhr.open("POST", '/stock', true);
-      xhr.send("value=" + document.getElementById("stock_box").value);
+      xhr.open("POST", '/result', true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.send("name=ticker&value=" + document.getElementById("stock_box").value);
     });
     {{#names}}
     document.getElementById("{{name}}").addEventListener('click', () => {
@@ -103,6 +104,7 @@ def parse_request():
     data = request.data  # data is empty
     data_source_name = request.form.get("name", "")
     data_value = request.form.get("value", "")
+    print("abc123 hsdaf0dishfpiadsjh", data, data_source_name, data_value, request, request.data)
     # print("in here abc123", data, type(data), request.form)
     if GLOBAL_DATA_CALLBACK:
         if not (data_source_name and data_value):
