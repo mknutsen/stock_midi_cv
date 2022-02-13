@@ -1,12 +1,17 @@
-from re import M
 from mido import Message, open_input, get_input_names, get_output_names, open_output
 from yfinance import download as stock_price_download
 from typing import List, Callable, Optional, Dict
 from pandas import DataFrame
 from threading import Thread, Lock
 from math import floor
-from helpers import Clock, Value
+from helpers import Clock, Value, MainWindow
 import logging
+import sys
+import os
+
+from PyQt5 import QtWidgets
+from pyqtgraph import PlotWidget, plot
+import pyqtgraph as pg
 from flask_entry import (
     main as flask_entry_point,
     _KEYWORD_LIST,
@@ -16,9 +21,10 @@ from flask_entry import (
     _MAX_VALUE,
     _SKEW_KEYWORD,
     _RATE_KEYWORD,
+    _DEBUG,
 )
+from sequence import CvSequence
 
-_DEBUG = True
 ticker: str = "PTON"
 start_date: str = "2020-01-01"
 end_date: str = "2022-01-01"
@@ -31,14 +37,14 @@ SEQUENCE = None
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
-stock_data = None
+GLOBAL_STOCK_DATA = None
 
 
 def math():
-    global stock_data
+    global GLOBAL_STOCK_DATA
     df: DataFrame = stock_price_download(ticker, start_date, end_date)
     df = df["Open"]
-
+    GLOBAL_STOCK_DATA = df
     num_entries: int = len(df)
     step_factor: int = floor(num_entries / steps.value)
     # NOTE: if the goal is to get 32 final steps, the floor causes the actual number you get to be slightly higher (ex.: ~34)
@@ -60,82 +66,24 @@ def math():
 
 
 def input_loop(port_name: str, clock: Clock) -> None:
-    print("input loop")
-    try:
-        port = open_input(port_name)
-    except:
-        print("input failed")
-        print(get_input_names())
-        raise
-    print("up and running")
-    for message in port:
-        if message.type == "clock":
-            clock.tic()
-        else:
-            # thru port hack
-            # print("input loop sending", message)
-            clock.tic(message)
-
-
-class CvSequence:
-    def __init__(self, port, sequence, tics_per_step, channel, cc) -> None:
-        self.lock = Lock()
-        self.step_index = 0
-        self.tic_index = 0
-        self.port = port
-        self.sequence = sequence
-        self.sequence_length = len(sequence)
-        self.channel = channel
-        self.cc = cc
-        self.tics_per_step = tics_per_step
-        self.alter_table: Dict[str, Value] = {
-            word: Value(initialized_value=0, max_value=_MAX_VALUE, min_value=0)
-            for word in _KEYWORD_LIST
-        }
-
-    def alter(self, name, value):
-        self.alter_table[name].value = int(value)
-
-    def _increment_step_index(self):
-        # print("next_step", self.step_index)
-        self.step_index += 1
-        if self.step_index >= self.sequence_length:
-            print("----LOOP-------")
-            self.step_index = 0
-
-    def tick(self):
-        with self.lock:
-            self.tic_index += 1
-            if self.tic_index >= self.tics_per_step:
-                self.tic_index = 0
-                self._step()
-
-    def _step(self):
-        # print("step")
-        raw_step_value = self.sequence[self.step_index]
-        rate_value = self.alter_table[_RATE_KEYWORD]
-        # length_value = self.alter_table[_LENGTH_KEYWORD]
-        # range_value = self.alter_table[_RANGE_KEYWORD]
-        base_value = self.alter_table[_BASE_KEYWORD]
-        skew_value = self.alter_table[_SKEW_KEYWORD]
-        skewed_skew_value = Value(
-            min_value=0.5, max_value=1.5, initialized_percent=skew_value.value_percent
-        )
-        computed_step = base_value.value_percent + raw_step_value * skewed_skew_value
-        normalized_value: Value = Value(
-            max_value=_MAX_VALUE, min_value=0, initialized_percent=computed_step
-        )
-        message = Message(
-            type="control_change",
-            channel=self.channel,
-            control=self.cc,
-            value=normalized_value,
-        )
-        self.tics_per_step = rate_value
-        if not _DEBUG:
-            self.port.send(message)
-        print(f"{'not sending' if _DEBUG else 'sending'}", message)
-        self._increment_step_index()
+    logging.debug("input loop")
+    if not _DEBUG:
+        try:
+            port = open_input(port_name)
+        except:
+            logging.debug("input failed")
+            logging.debug(get_input_names())
+            raise
+        logging.debug("up and running")
+        for message in port:
+            if message.type == "clock":
+                clock.tic()
+            else:
+                # thru port hack
+                # logging.debug("input loop sending", message)
+                clock.tic(message)
+    else:
+        logging.debug("input loop is nto running because of debug mode")
 
 
 def data_callback(name, value):
@@ -143,17 +91,32 @@ def data_callback(name, value):
     SEQUENCE.alter(name, value)
 
 
+def run_graph():
+    global GLOBAL_STOCK_DATA
+    logging.debug(f"abc123 running graph {GLOBAL_STOCK_DATA}")
+    app = QtWidgets.QApplication(sys.argv)
+    mw = MainWindow(GLOBAL_STOCK_DATA)
+    mw.show()
+
+
 def main():
     global SEQUENCE
-    logging.basicConfig(filename="example.log", encoding="utf-8", level=logging.DEBUG)
     if not _DEBUG:
         try:
             port_out = open_output(output_port_name)
         except:
-            print(get_output_names())
+            logging.debug(get_output_names())
             raise
     else:
         port_out = None
+
+    def clock_tic_callback(message: Optional[Message] = None) -> None:
+        global SEQUENCE
+        if not message:
+            SEQUENCE.tick()
+
+        if not _DEBUG:
+            port_out.send(message)
 
     normalized_sequence_data = math()
     SEQUENCE = CvSequence(
@@ -164,41 +127,18 @@ def main():
         cc=cc,
     )
 
-    def clock_tic_callback(message: Optional[Message] = None) -> None:
-        if not message:
-            sequence.tick()
-        else:
-            # print("clock tick callback", message)
-            if not _DEBUG:
-                port_out.send(message)
-
-    flask_entry_point(callback=data_callback)
-    # clock = Clock(clock_tic_callback)
-    # input_thread = Thread(target=input_loop, args=(input_port_name, clock))
-    # input_thread.start()
+    clock = Clock(clock_tic_callback)
+    input_thread = Thread(target=input_loop, args=(input_port_name, clock))
+    input_thread.start()
+    flask_thread = Thread(target=flask_entry_point, args=(data_callback,))
+    flask_thread.start()
+    # app = QtWidgets.QApplication(sys.argv)
+    # mw = MainWindow(GLOBAL_STOCK_DATA)
+    # mw.show()
+    # sys.exit(app.exec_())
+    # flask_entry_point(callback=data_callback)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename="example.log", encoding="utf-8", level=logging.DEBUG)
     main()
-
-    from PyQt5 import QtWidgets
-    from pyqtgraph import PlotWidget, plot
-    import pyqtgraph as pg
-    import sys  # We need sys so that we can pass argv to QApplication
-    import os
-
-    class MainWindow(QtWidgets.QMainWindow):
-        def __init__(self, *args, **kwargs):
-            super(MainWindow, self).__init__(*args, **kwargs)
-
-            self.graphWidget = pg.PlotWidget()
-            self.setCentralWidget(self.graphWidget)
-            x = [i for i in range(len(stock_data))]
-            y = stock_data
-            # plot data: x, y values
-            self.graphWidget.plot(x, y)
-
-    app = QtWidgets.QApplication(sys.argv)
-    mw = MainWindow()
-    mw.show()
-    sys.exit(app.exec_())

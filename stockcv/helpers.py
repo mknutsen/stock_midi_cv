@@ -4,12 +4,28 @@ from mido import Message
 import logging
 
 
+from PyQt5 import QtWidgets
+from pyqtgraph import PlotWidget, plot
+import pyqtgraph as pg
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self, stock_data):
+        super(MainWindow, self).__init__()
+        self.graphWidget = pg.PlotWidget()
+        self.setCentralWidget(self.graphWidget)
+        x = [i for i in range(len(stock_data))]
+        y = stock_data
+        # plot data: x, y values
+        self.graphWidget.plot(x, y)
+
+
 class Clock:
     def __init__(self, callback_fn) -> None:
         self.callback_fn: Callable[[Optional[Message]], None] = callback_fn
         pass
 
-    def tic(self, message: Optional[Message] = None) -> None:
+    def tic(self, message) -> None:
         self.callback_fn(message)
 
     def message(self, message: Message) -> None:

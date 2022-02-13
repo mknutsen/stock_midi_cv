@@ -13,6 +13,7 @@ file_path = Path(__file__) / ".."
 static_web_folder_name = "static_web"
 dashboard_file_name = "dashboard"
 
+_DEBUG = True
 static_web_folder_path = file_path / static_web_folder_name
 static_web_folder_path_str = static_web_folder_path.resolve()
 dashboard_file_path = static_web_folder_path / (dashboard_file_name + ".html")
@@ -37,17 +38,25 @@ makedirs(static_web_folder_path_str)
 input_template = """
 Hello world dashboard
 
-<FORM action="/result" method="post" id="form">
+<FORM id="form">
 
     {{#names}}
     {{name}}
     <input type="range" name="{{name}}" min="0" max="{{max_value}}" value="50" class="slider" id="{{name}}">
     {{/names}}
-  <INPUT type="submit" name="Send">
 </FORM>
+<form>
+  <input type="textbox" id="stock_box">
+  <input type="button" id="stock_button">
+</form>
 <script>
   (function () {
     var xhr = new XMLHttpRequest();
+    document.getElementById("stock_button").addEventListener('click', () => {
+      console.log("button pressed: " + document.getElementById("stock_box").value);
+      xhr.open("POST", '/stock', true);
+      xhr.send("value=" + document.getElementById("stock_box").value);
+    });
     {{#names}}
     document.getElementById("{{name}}").addEventListener('click', () => {
       console.log("abc123 event {{name}}");
@@ -82,6 +91,11 @@ def main(callback=None):
         GLOBAL_DATA_CALLBACK = callback
     app.run(host="localhost", port=5000)
 
+
+@app.route("/stock", methods=["GET", "POST"])
+def parse_stock():
+  print("abc123 in stock parse", request)
+  return "ak"
 
 @app.route("/result", methods=["GET", "POST"])
 def parse_request():
