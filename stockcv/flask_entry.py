@@ -5,7 +5,11 @@ from shutil import rmtree
 from pathlib import Path
 
 
-class FlaskException(Exception):
+class StockMidiCvException(Exception):
+    """ExceptionClass"""
+
+
+class FlaskException(StockMidiCvException):
     """This is what happens when flask fails"""
 
 
@@ -95,8 +99,9 @@ def main(callback=None):
 
 @app.route("/stock", methods=["GET", "POST"])
 def parse_stock():
-  print("abc123 in stock parse", request)
-  return "ak"
+    print("abc123 in stock parse", request)
+    return "ak"
+
 
 @app.route("/result", methods=["GET", "POST"])
 def parse_request():
@@ -104,7 +109,14 @@ def parse_request():
     data = request.data  # data is empty
     data_source_name = request.form.get("name", "")
     data_value = request.form.get("value", "")
-    print("abc123 hsdaf0dishfpiadsjh", data, data_source_name, data_value, request, request.data)
+    print(
+        "abc123 hsdaf0dishfpiadsjh",
+        data,
+        data_source_name,
+        data_value,
+        request,
+        request.data,
+    )
     # print("in here abc123", data, type(data), request.form)
     if GLOBAL_DATA_CALLBACK:
         if not (data_source_name and data_value):

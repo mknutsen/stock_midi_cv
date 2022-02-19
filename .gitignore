@@ -6,7 +6,7 @@ __pycache__/
 .vscode/
 pyvenv.cfg
 bin/
-
+.idea/
 # C extensions
 share/
 *.so

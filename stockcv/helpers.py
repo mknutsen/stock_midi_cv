@@ -1,12 +1,14 @@
-from stockcv.flask_entry import _MAX_VALUE
-from typing import Callable, Optional
-from mido import Message
 import logging
+from time import time
 
-
-from PyQt5 import QtWidgets
-from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
+from PyQt5 import QtWidgets
+
+_MILLISECONDS_PER_SECOND = 1000
+
+
+def get_time_ms():
+    return time() * _MILLISECONDS_PER_SECOND
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -18,18 +20,6 @@ class MainWindow(QtWidgets.QMainWindow):
         y = stock_data
         # plot data: x, y values
         self.graphWidget.plot(x, y)
-
-
-class Clock:
-    def __init__(self, callback_fn) -> None:
-        self.callback_fn: Callable[[Optional[Message]], None] = callback_fn
-        pass
-
-    def tic(self, message) -> None:
-        self.callback_fn(message)
-
-    def message(self, message: Message) -> None:
-        self.callback_fn(message)
 
 
 class ValueException(Exception):

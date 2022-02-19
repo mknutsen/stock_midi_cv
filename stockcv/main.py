@@ -1,30 +1,22 @@
-from mido import Message, open_input, get_input_names, get_output_names, open_output
-from yfinance import download as stock_price_download
-from typing import List, Callable, Optional, Dict
-from pandas import DataFrame
-from threading import Thread, Lock
-from math import floor
-from helpers import Clock, Value, MainWindow
 import logging
 import sys
-import os
+from math import floor
+from threading import Thread
+from typing import List, Optional
 
+from mido import get_input_names, get_output_names, open_input, open_output
+from mido.ports import BaseOutput as Port
+from pandas import DataFrame
 from PyQt5 import QtWidgets
-from pyqtgraph import PlotWidget, plot
-import pyqtgraph as pg
-from flask_entry import (
-    main as flask_entry_point,
-    _KEYWORD_LIST,
-    _RANGE_KEYWORD,
-    _LENGTH_KEYWORD,
-    _BASE_KEYWORD,
-    _MAX_VALUE,
-    _SKEW_KEYWORD,
-    _RATE_KEYWORD,
-    _DEBUG,
-)
-from sequence import CvSequence
+from yfinance import download as stock_price_download
 
+from flask_entry import _DEBUG, main as flask_entry_point
+from helpers import MainWindow, Value
+from sequence import AveragingSequenceState, Clock, SequenceState
+
+GLOBAL_OUTPUT_PORT: Optional[Port] = None
+GLOBAL_SEQUENCE: Optional[SequenceState] = None
+GLOBAL_STOCK_DATA_AS_STEPS: Optional[List[float]] = None
 GLOBAL_TICKER: str = "PTON"
 GLOBAL_START_DATE: str = "2020-01-01"
 GLOBAL_END_DATE: str = "2022-01-01"
@@ -33,16 +25,18 @@ GLOBAL_NUM_STEPS = Value(max_value=1024, min_value=8, initialized_value=32)
 channel = 2
 cc = 22
 tics_per_step = Value(max_value=1024, min_value=1, initialized_value=8)
-SEQUENCE = None
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
 GLOBAL_STOCK_DATA = None
+GLOBAL_THRU = True  # is a thru port
 
 
 def math():
-    global GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
-    df: DataFrame = stock_price_download(GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE)
+    global GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE, GLOBAL_STOCK_DATA_AS_STEPS
+    df: DataFrame = stock_price_download(
+        GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
+    )
     df = df["Open"]
     GLOBAL_STOCK_DATA = df
     num_entries: int = len(df)
@@ -67,10 +61,12 @@ def math():
     #     for raw, normalized in zip(step_values, normalized_data)
     # ]
 
+    GLOBAL_STOCK_DATA_AS_STEPS = normalized_df.tolist()
     return normalized_df.tolist()
 
 
-def input_loop(port_name: str, clock: Clock) -> None:
+def input_loop(port_name: str) -> None:
+    global GLOBAL_OUTPUT_PORT, GLOBAL_THRU, GLOBAL_SEQUENCE
     logging.debug("input loop")
     if not _DEBUG:
         try:
@@ -82,23 +78,22 @@ def input_loop(port_name: str, clock: Clock) -> None:
         logging.debug("up and running")
         for message in port:
             if message.type == "clock":
-                clock.tic()
-            else:
-                # thru port hack
-                # logging.debug("input loop sending", message)
-                clock.tic(message)
+                GLOBAL_SEQUENCE.clock.tic()
+            if GLOBAL_THRU and GLOBAL_OUTPUT_PORT:
+                GLOBAL_OUTPUT_PORT.send(message)
     else:
-        logging.debug("input loop is nto running because of debug mode")
+        logging.debug("input loop is not running because of debug mode")
 
 
 def data_callback(name, value):
-    global SEQUENCE, GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
+    global GLOBAL_CLOCK, GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
     if name == "ticker":
         print("ticker", name, value)
         GLOBAL_TICKER = value
-        SEQUENCE.set_sequence(math())
+        math()  # sets global
+        GLOBAL_SEQUENCE.set_sequence(GLOBAL_STOCK_DATA_AS_STEPS)
     else:
-        SEQUENCE.alter(name, value)
+        GLOBAL_SEQUENCE.alter(name, value)
 
 
 def run_graph():
@@ -110,35 +105,25 @@ def run_graph():
 
 
 def main():
-    global SEQUENCE
+    global GLOBAL_OUTPUT_PORT, GLOBAL_SEQUENCE
     if not _DEBUG:
         try:
-            port_out = open_output(output_port_name)
+            GLOBAL_OUTPUT_PORT = open_output(output_port_name)
         except:
             logging.debug(get_output_names())
             raise
-    else:
-        port_out = None
-
-    def clock_tic_callback(message: Optional[Message] = None) -> None:
-        global SEQUENCE
-        if not message:
-            SEQUENCE.tick()
-
-        if not _DEBUG:
-            port_out.send(message)
 
     normalized_sequence_data = math()
-    SEQUENCE = CvSequence(
-        port=port_out,
-        sequence=normalized_sequence_data,
+
+    GLOBAL_SEQUENCE = AveragingSequenceState(
         tics_per_step=tics_per_step,
         channel=channel,
         cc=cc,
+        sequence=normalized_sequence_data,
+        port=GLOBAL_OUTPUT_PORT,
     )
 
-    clock = Clock(clock_tic_callback)
-    input_thread = Thread(target=input_loop, args=(input_port_name, clock))
+    input_thread = Thread(target=input_loop, args=(input_port_name,))
     input_thread.start()
     flask_thread = Thread(target=flask_entry_point, args=(data_callback,))
     flask_thread.start()

@@ -12,3 +12,4 @@ yfinance==0.1.70
 pystache==0.6.0
 notebook==6.4.8
 pytest==7.0.1
+flake8==4.0.1
