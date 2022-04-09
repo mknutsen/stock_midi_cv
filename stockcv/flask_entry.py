@@ -23,19 +23,8 @@ static_web_folder_path_str = static_web_folder_path.resolve()
 dashboard_file_path = static_web_folder_path / (dashboard_file_name + ".html")
 dashboard_file_path_str = dashboard_file_path.resolve()
 
-_MAX_VALUE = 100
-_RATE_KEYWORD = "rate"
-_LENGTH_KEYWORD = "length"
-_RANGE_KEYWORD = "range"
-_BASE_KEYWORD = "base"
-_SKEW_KEYWORD = "skew"
-_KEYWORD_LIST = [
-    _RATE_KEYWORD,
-    _LENGTH_KEYWORD,
-    _RANGE_KEYWORD,
-    _BASE_KEYWORD,
-    _SKEW_KEYWORD,
-]
+_MAX_VALUE = 127
+_SLIDER_LIST = [f"slider_{i}" for i in range(1, 10)]
 
 rmtree(static_web_folder_path_str)
 makedirs(static_web_folder_path_str)
@@ -46,40 +35,40 @@ Hello world dashboard
 
     {{#names}}
     {{name}}
-    <input type="range" name="{{name}}" min="0" max="{{max_value}}" value="50" class="slider" id="{{name}}">
+    
     {{/names}}
 </FORM>
 <form>
   <input type="textbox" id="stock_box">
   <input type="button" id="stock_button">
 </form>
-<script>
-  (function () {
-    var xhr = new XMLHttpRequest();
-    document.getElementById("stock_button").addEventListener('click', () => {
-      console.log("button pressed: " + document.getElementById("stock_box").value);
-      xhr.open("POST", '/result', true);
-      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-      xhr.send("name=ticker&value=" + document.getElementById("stock_box").value);
-    });
-    {{#names}}
-    document.getElementById("{{name}}").addEventListener('click', () => {
-      console.log("abc123 event {{name}}");
-      console.log(event);
-      xhr.open("POST", '/result', true);
-
-      //Send the proper header information along with the request
-      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-
-      console.log(document.getElementById("{{name}}").value)
-      xhr.send("name={{name}}&value=" + document.getElementById("{{name}}").value);
-    });
-    {{/names}}
-  })();
-</script>
 """
+# <script>
+#   (function () {
+#     var xhr = new XMLHttpRequest();
+#     document.getElementById("stock_button").addEventListener('click', () => {
+#       console.log("button pressed: " + document.getElementById("stock_box").value);
+#       xhr.open("POST", '/result', true);
+#       xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+#       xhr.send("name=ticker&value=" + document.getElementById("stock_box").value);
+#     });
+#     {{#names}}
+#     document.getElementById("{{name}}").addEventListener('click', () => {
+#       console.log("abc123 event {{name}}");
+#       console.log(event);
+#       xhr.open("POST", '/result', true);
 
-input_dict = {"names": [{"name": element} for element in _KEYWORD_LIST]}
+#       //Send the proper header information along with the request
+#       xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+#       console.log(document.getElementById("{{name}}").value)
+#       xhr.send("name={{name}}&value=" + document.getElementById("{{name}}").value);
+#     });
+#     {{/names}}
+#   })();
+# </script>
+
+input_dict = {"names": [{"name": element} for element in _SLIDER_LIST]}
 input_dict["max_value"] = _MAX_VALUE
 renderer = Renderer()
 

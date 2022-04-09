@@ -1,68 +1,17 @@
 import logging
-import sys
-from math import floor
 from threading import Thread
 from typing import List, Optional
 
-from mido import get_input_names, get_output_names, open_input, open_output
+from mido import get_input_names, get_output_names, open_input, open_output, Message
 from mido.ports import BaseOutput as Port
-from pandas import DataFrame
-from PyQt5 import QtWidgets
-from yfinance import download as stock_price_download
 
 from flask_entry import _DEBUG, main as flask_entry_point
-from helpers import MainWindow, Value
-from sequence import AveragingSequenceState, Clock, SequenceState
 
 GLOBAL_OUTPUT_PORT: Optional[Port] = None
-GLOBAL_SEQUENCE: Optional[SequenceState] = None
-GLOBAL_STOCK_DATA_AS_STEPS: Optional[List[float]] = None
-GLOBAL_TICKER: str = "PTON"
-GLOBAL_START_DATE: str = "2020-01-01"
-GLOBAL_END_DATE: str = "2022-01-01"
-GLOBAL_NUM_STEPS = Value(max_value=1024, min_value=8, initialized_value=32)
-
-channel = 2
-cc = 22
-tics_per_step = Value(max_value=1024, min_value=1, initialized_value=8)
 
 output_port_name: str = "mio"
 input_port_name: str = "Arturia BeatStep Pro Arturia BeatStepPro"
-GLOBAL_STOCK_DATA = None
 GLOBAL_THRU = True  # is a thru port
-
-
-def math():
-    global GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE, GLOBAL_STOCK_DATA_AS_STEPS
-    df: DataFrame = stock_price_download(
-        GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
-    )
-    df = df["Open"]
-    GLOBAL_STOCK_DATA = df
-    num_entries: int = len(df)
-
-    if not num_entries:
-        print("empty stock info")
-        return []
-
-    step_factor: int = floor(num_entries / GLOBAL_NUM_STEPS.value)
-    # NOTE: if the goal is to get 32 final steps, the floor causes the actual number you get to be slightly higher (ex.: ~34)
-
-    filtered_df = df.iloc[::step_factor]
-
-    min_value: float = df.min()
-    max_value: float = df.max()
-    value_range: float = max_value - min_value
-
-    normalized_df = (filtered_df - min_value) / value_range
-
-    # mixed_data: List[float] = [
-    #     ((normalized - raw) * mix) + raw
-    #     for raw, normalized in zip(step_values, normalized_data)
-    # ]
-
-    GLOBAL_STOCK_DATA_AS_STEPS = normalized_df.tolist()
-    return normalized_df.tolist()
 
 
 def input_loop(port_name: str) -> None:
@@ -77,51 +26,44 @@ def input_loop(port_name: str) -> None:
             raise
         logging.debug("up and running")
         for message in port:
-            if message.type == "clock":
-                GLOBAL_SEQUENCE.clock.tic()
-            if GLOBAL_THRU and GLOBAL_OUTPUT_PORT:
-                GLOBAL_OUTPUT_PORT.send(message)
+            if message.type == "control_change":
+                # only reroute things in our mapping table
+                cc = GLOBAL_MAPPING_TABLE.get(message.control, message.control)
+                out_msg = Message(
+                    type=message.type,
+                    channel=message.channel,
+                    control=cc,
+                    value=message.value,
+                )
+
+                print(out_msg)
+                GLOBAL_OUTPUT_PORT.send(out_msg)
     else:
         logging.debug("input loop is not running because of debug mode")
 
 
-def data_callback(name, value):
-    global GLOBAL_CLOCK, GLOBAL_STOCK_DATA, GLOBAL_TICKER, GLOBAL_START_DATE, GLOBAL_END_DATE
-    if name == "ticker":
-        print("ticker", name, value)
-        GLOBAL_TICKER = value
-        math()  # sets global
-        GLOBAL_SEQUENCE.set_sequence(GLOBAL_STOCK_DATA_AS_STEPS)
-    else:
-        GLOBAL_SEQUENCE.alter(name, value)
+def data_callback(key, value):
+    """just send to output based on mapping"""
+    global GLOBAL_MAPPING_TABLE, GLOBAL_OUTPUT_PORT
 
 
-def run_graph():
-    global GLOBAL_STOCK_DATA
-    logging.debug(f"abc123 running graph {GLOBAL_STOCK_DATA}")
-    app = QtWidgets.QApplication(sys.argv)
-    mw = MainWindow(GLOBAL_STOCK_DATA)
-    mw.show()
+GLOBAL_MAPPING_TABLE = dict()
+
+
+def mapping_callback(key, value):
+    global GLOBAL_MAPPING_TABLE
+    print(f"mapping callback key {key} value {value}")
+    GLOBAL_MAPPING_TABLE[key] = value
 
 
 def main():
-    global GLOBAL_OUTPUT_PORT, GLOBAL_SEQUENCE
+    global GLOBAL_OUTPUT_PORT
     if not _DEBUG:
         try:
             GLOBAL_OUTPUT_PORT = open_output(output_port_name)
         except:
             logging.debug(get_output_names())
             raise
-
-    normalized_sequence_data = math()
-
-    GLOBAL_SEQUENCE = AveragingSequenceState(
-        tics_per_step=tics_per_step,
-        channel=channel,
-        cc=cc,
-        sequence=normalized_sequence_data,
-        port=GLOBAL_OUTPUT_PORT,
-    )
 
     input_thread = Thread(target=input_loop, args=(input_port_name,))
     input_thread.start()
